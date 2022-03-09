@@ -1,0 +1,7 @@
+# Client
+requests
+plyer
+dbus-python
+
+# Server
+Flask
