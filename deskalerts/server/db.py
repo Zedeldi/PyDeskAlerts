@@ -8,11 +8,30 @@ from typing import Any
 class DB:
     """Handle database operations."""
 
+    ALL_USERS = "ALL_USERS"
+
     def __init__(self, database: str = "deskalerts.db") -> None:
         """Initialise database."""
         self.database = database
         self._exec_sql(
-            "CREATE TABLE IF NOT EXISTS alerts (user STRING, message STRING, time REAL)"
+            """
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user STRING,
+                message STRING,
+                created REAL,
+                expires REAL
+            )
+            """
+        )
+        self._exec_sql(
+            """
+            CREATE TABLE IF NOT EXISTS seen (
+                id INTEGER,
+                user STRING,
+                FOREIGN KEY(id) REFERENCES alerts(id)
+            )
+            """
         )
 
     def _exec_sql(self, *args) -> list[Any]:
@@ -24,26 +43,40 @@ class DB:
         conn.close()
         return res
 
-    def add_message(self, user: str, message: str) -> None:
+    def add_message(self, user: str, message: str, expires: float) -> None:
         """Add message to database."""
         self._exec_sql(
-            "INSERT INTO alerts VALUES (?, ?, ?)", (user, message, time.time())
+            "INSERT INTO alerts VALUES (null, ?, ?, ?, ?)",
+            (user, message, time.time(), expires),
         )
 
-    def get_messages(self, user: str) -> list[str]:
+    def _get_messages(self, user: str) -> list[tuple[int, str]]:
         """
-        Return all messages for user in database.
+        Return all valid messages for the specified user and self.ALL_USERS.
 
-        All messages for the user are deleted afterwards.
+        Add message ID and user to seen table.
         """
         messages = [
-            message[0]
+            (message[0], message[1])
             for message in self._exec_sql(
-                "SELECT message FROM alerts WHERE user = (?)", (user,)
+                """
+                SELECT id, message
+                FROM alerts
+                WHERE (user = (?) OR user = (?))
+                AND expires > (?)
+                AND id NOT IN
+                (SELECT id FROM seen WHERE user = (?))
+                """,
+                (user, self.ALL_USERS, time.time(), user),
             )
         ]
-        self.flush_user(user)
+        for message_id, _ in messages:
+            self._exec_sql("INSERT INTO seen VALUES (?, ?)", (message_id, user))
         return messages
+
+    def get_messages(self, user: str) -> list[str]:
+        """Return all unseen, unexpired messages for user in database."""
+        return [message[1] for message in self._get_messages(user)]
 
     def flush(self) -> None:
         """Delete all alerts from database."""

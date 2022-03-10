@@ -1,5 +1,7 @@
 """Web interface for the DeskAlerts network."""
 
+from datetime import datetime
+
 from flask import Flask, render_template, request
 
 from deskalerts.server.db import DB
@@ -15,13 +17,14 @@ def send() -> str:
     if request.method == "POST":
         user = request.form["user"]
         message = request.form["message"]
-        db.add_message(user, message)
+        expires = datetime.strptime(request.form["expires"], "%Y-%m-%d").timestamp()
+        db.add_message(user, message, expires)
         status = "Success!"
-    return render_template("send.html", status=status)
+    return render_template("send.html", all_users=db.ALL_USERS, status=status)
 
 
 @app.route("/get", methods=["GET"])
-def get() -> str:
+def get() -> dict[str, list[str]]:
     """Endpoint to get messages from server."""
     user = request.args.get("user")
     d = {
