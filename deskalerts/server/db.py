@@ -2,7 +2,19 @@
 
 import sqlite3
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Optional
+
+
+@dataclass(eq=True, frozen=True)
+class Alert:
+    """Dataclass to store information about an alert."""
+
+    user: str
+    message: str
+    created: float
+    expires: float
+    id: Optional[int] = None
 
 
 class DB:
@@ -43,24 +55,24 @@ class DB:
         conn.close()
         return res
 
-    def add_message(self, user: str, message: str, expires: float) -> None:
-        """Add message to database."""
+    def add_alert(self, alert: Alert) -> None:
+        """Add alert to database."""
         self._exec_sql(
-            "INSERT INTO alerts VALUES (null, ?, ?, ?, ?)",
-            (user, message, time.time(), expires),
+            "INSERT INTO alerts VALUES (?, ?, ?, ?, ?)",
+            (alert.id, alert.user, alert.message, alert.created, alert.expires),
         )
 
-    def _get_messages(self, user: str) -> list[tuple[int, str]]:
+    def get_alerts(self, user: str) -> list[Alert]:
         """
-        Return all valid messages for the specified user and self.ALL_USERS.
+        Return all valid alerts for the specified user and self.ALL_USERS.
 
-        Add message ID and user to seen table.
+        Add alert ID and user to seen table.
         """
-        messages = [
-            (message[0], message[1])
-            for message in self._exec_sql(
+        alerts = [
+            Alert(*alert)
+            for alert in self._exec_sql(
                 """
-                SELECT id, message
+                SELECT user, message, created, expires, id
                 FROM alerts
                 WHERE (user = (?) OR user = (?))
                 AND expires > (?)
@@ -70,13 +82,42 @@ class DB:
                 (user, self.ALL_USERS, time.time(), user),
             )
         ]
-        for message_id, _ in messages:
-            self._exec_sql("INSERT INTO seen VALUES (?, ?)", (message_id, user))
-        return messages
+        for alert in alerts:
+            self._exec_sql("INSERT INTO seen VALUES (?, ?)", (alert.id, user))
+        return alerts
 
     def get_messages(self, user: str) -> list[str]:
         """Return all unseen, unexpired messages for user in database."""
-        return [message[1] for message in self._get_messages(user)]
+        return [alert.message for alert in self.get_alerts(user)]
+
+    @property
+    def alerts(self) -> list[Alert]:
+        """Return list of all alerts."""
+        return [
+            Alert(*alert)
+            for alert in self._exec_sql(
+                "SELECT user, message, created, expires, id FROM alerts"
+            )
+        ]
+
+    @property
+    def seen_users(self) -> list[str]:
+        """Return list of seen users."""
+        return [user[0] for user in self._exec_sql("SELECT DISTINCT user FROM seen")]
+
+    def get_seen_by(self, alert: Alert) -> list[str]:
+        """Return list of users that have seen alert."""
+        return [
+            user[0]
+            for user in self._exec_sql(
+                "SELECT DISTINCT user FROM seen WHERE id = (?)", (alert.id,)
+            )
+        ]
+
+    @property
+    def seen_alerts(self) -> dict[Alert, list[str]]:
+        """Return dictionary of alerts to list of users that have seen it."""
+        return {alert: self.get_seen_by(alert) for alert in self.alerts}
 
     def flush(self) -> None:
         """Delete all alerts from database."""
