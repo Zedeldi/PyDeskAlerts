@@ -33,4 +33,5 @@ Server:
 
 ## Credits
 
-Icon = <https://feathericons.com>
+ - Bootstrap = <https://getbootstrap.com/>
+ - Icon = <https://feathericons.com>
